@@ -1,0 +1,30 @@
+CREATE DEFINER=`root`@`127.0.0.1` PROCEDURE `CMSreportautomation`()
+BEGIN
+
+declare cdtechk,curtmestmp,lstchktme,trnstime timestamp;
+declare typ,pid,descr,flag,org varchar(2000);
+
+DECLARE done  INT DEFAULT 0;
+DECLARE MCOLUMNS varchar(200);
+
+DECLARE  MCOLUMNS cursor for select ORGANISATION,PARENT_ID,DESCRIPTION,REPORT_FLAG,NEW_ORG  from CMS_REPORT_SP_MAPPING
+where REPORT_FLAG in(1,2);
+
+DECLARE EXIT HANDLER FOR NOT FOUND SET done   = 1;
+OPEN MCOLUMNS;
+
+TRUNCATE TABLE CMS_REPORT_STATUS;
+WHILE done = 0 DO
+    FETCH MCOLUMNS into typ,pid,descr,flag,org;
+
+        select typ,pid,descr,org;
+
+        call Populatecmsreportstatus(typ,pid,descr,flag,org);
+
+END WHILE;
+
+
+CLOSE MCOLUMNS;
+
+
+END

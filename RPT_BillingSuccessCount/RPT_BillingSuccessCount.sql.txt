@@ -1,0 +1,37 @@
+CREATE DEFINER=`root`@`127.0.0.1` PROCEDURE `RPT_BillingSuccessCount`()
+BEGIN
+declare tsk1,tsk2 varchar(100000);
+declare csdsts varchar(200);
+
+set session group_concat_max_len=100000;
+
+
+
+SET @query = CONCAT("select group_concat(TASK_ID)  into @tsk1 from TASK_PROFILE_RPT where ((STATUS=7  and   date(SCHEDULE_TIME )=date_add(curdate(),interval -1 day)) OR (ONLINE_VALUE>0))");
+ 
+  PREPARE s1 FROM @query;
+    EXECUTE s1;
+    DEALLOCATE PREPARE s1;
+
+
+SET @query = CONCAT("select group_concat(TASK_ID)  into @tsk2 from TASK_PROFILE_RPT where ((STATUS=7  and date(SCHEDULE_TIME) between date_format(date_add(curdate(),interval -1 day),'%Y-%m-01') and date_add(curdate(),interval -1 day))  OR (ONLINE_VALUE>0))");
+ 
+  PREPARE s1 FROM @query;
+    EXECUTE s1;
+    DEALLOCATE PREPARE s1;
+
+
+
+set @q1=concat("select D.fulname funnme,sum(D.msgtotal) ftdcnt, sum(D.msdncnt) ftdvalue,sum(D.fdsuc)fdsuc,sum(D.ftdsuccper)*100 succper,sum(C.mtdsucc) mtdsuccess,(sum(C.mtdsucc)/(sum(C.mtdttl))*100) mtdsuccper,(sum(C.mtdsucc)*0.0018) amnt from ",
+" (select A.fnmae fulname,sum(B.ttl) msdncnt,sum(B.msgttl)msgtotal,sum(B.ftdsucc) fdsuc,sum(B.ftdsucc)/sum(B.ttl) ftdsuccper from ",
+" (select str_to_date(CDR_DATE,'%d-%m-%Y') cdate,FULLNAME fnmae from RPT_CP_DELIVERY RPT,USER_DETAILS UD where  str_to_date(CDR_DATE,'%d-%m-%Y') between date_format(date_add(curdate(),interval -1 day),'%Y-%m-01') and date_add(curdate(),interval -1 day) and RPT.TASK_ID in(",@tsk2,") and RPT.CP_USER_ID=UD.USER_ID group by fnmae)A ",
+" left outer join ",
+" (select C.ddate ddate,C.fnmae fnmae,sum(C.ttl) ttl,sum(C.ftdsucc) ftdsucc,sum(D.msgttl) msgttl from (select str_to_date(CDR_DATE,'%d-%m-%Y') ddate,RPT.TASK_ID rpttsk,UD.FULLNAME fnmae,sum(TOTAL) ttl,sum(case when STATUS_CODE=0 and DEL_STATUS=1 then TOTAL else 0 end) ftdsucc from RPT_CP_DELIVERY RPT,USER_DETAILS UD where RPT.TASK_ID in(",@tsk1,") and str_to_date(CDR_DATE,'%d-%m-%Y')=date_add(curdate(),interval -1 day) and RPT.CP_USER_ID=UD.USER_ID group by fnmae,rpttsk)C left join  ",
+" (select date_add(curdate(),interval -1 day) cdt,TASK_ID cmstsk,sum(ACTUAL_INSERTED) msgttl from CMS.CAMPAIGN_PROCESSOR_CDR CDR  where TASK_ID IN (",@tsk1,") group by TASK_ID)D ON C.ddate=D.cdt and C.rpttsk=D.cmstsk group by C.ddate,C.fnmae)B ON A.fnmae=B.fnmae  group by A.fnmae)D ",
+ " left outer join ",
+" (select UD.FULLNAME fnmae,sum(TOTAL) mtdttl,sum(case when STATUS_CODE=0 and DEL_STATUS=1  then TOTAL else 0 end) mtdsucc from RPT_CP_DELIVERY RPT,USER_DETAILS UD where  str_to_date(CDR_DATE,'%d-%m-%Y') between date_format(date_add(curdate(),interval -1 day),'%Y-%m-01') and date_add(curdate(),interval -1 day) and RPT.CP_USER_ID=UD.USER_ID  and RPT.TASK_ID in(",@tsk2,") group by fnmae)C ON D.fulname=C.fnmae group by D.fulname;");
+ PREPARE s1 FROM @q1;
+    EXECUTE s1;
+    DEALLOCATE PREPARE s1;
+
+END 

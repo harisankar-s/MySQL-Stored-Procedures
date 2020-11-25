@@ -1,0 +1,46 @@
+CREATE DEFINER=`root`@`127.0.0.1` PROCEDURE `PopulateHourlySMSCDELIVERYDashboard`()
+BEGIN
+declare dDay,monthNo,Actual_month varchar(10);
+declare tableName1,tableName2 varchar(50);
+declare dDate Date;
+ 
+select date_add(curdate(),interval -0 day) into dDate;
+select date_format(dDate,'%d') into dDay ;
+select dDay;
+select date_format(dDate,'%m') into monthNo;
+
+if(monthNo >=3 and monthNo<=12)
+    then
+select mod(monthNo,4) into Actual_month ;
+    end if;
+    if (Actual_month=0)
+    then
+set Actual_month=4;
+    else
+set Actual_month= mod(monthNo,4) ;
+end if;
+
+if length(dDay)=1 then
+select concat("SUB_CDR_0",dDay,"_00_12_0,",Actual_month,"") into tableName1;
+select concat("SUB_CDR_0",dDay,"_12_23_0,",Actual_month,"") into tablename2;
+else
+select concat("SUB_CDR_",dDay,"_00_12_0",Actual_month,"") into tableName1;
+select concat("SUB_CDR_",dDay,"_12_23_0",Actual_month,"") into tablename2;
+end if;
+
+select tableName1;
+select tableName2;
+
+TRUNCATE TABLE RPT_HOURLY_SMSC_DASHBOARD_TEMP;
+
+SET @query = CONCAT("INSERT INTO RPT_HOURLY_SMSC_DASHBOARD_TEMP(CDR_DATE,HR,TASK_ID,USER_ID,DELIVERY_SUCCESS,DELIVERY_FAIL,DELIVERY_TOTAL) ",
+"(select A.ddate cdate,A.hhour hr,A.TASK_ID tskid,A.FIELD12 userid,sum(A.sucsmsc) sucsmsc,sum(A.failmsc) failmsc,sum(A.total) total from (select date(CREATE_TIME) ddate,hour(CREATE_TIME) hhour,TASK_ID,FIELD12,sum(case when STATUS_CODE=0 and FIELD19=1 and FIELD18=0 then 1 else 0 end ) sucsmsc, sum(case when (STATUS_CODE=0 and FIELD19=1 and FIELD18<>0) OR (STATUS_CODE=0 and FIELD19=0) then 1 else 0 end ) failmsc,count(*) total from ",tableName1," CDR  group by ddate,hhour,TASK_ID,FIELD12 union all select date(CREATE_TIME) ddate,hour(CREATE_TIME) hhour,TASK_ID,FIELD12,sum(case when STATUS_CODE=0 and FIELD19=1 and FIELD18=0  then 1 else 0 end ) sucsmsc, sum(case when (STATUS_CODE=0 and FIELD19=1 and FIELD18<>0) OR (STATUS_CODE=0 and FIELD19=0) then 1 else 0 end ) failmsc,count(*) total from ",tableName2," CDR  group by ddate,hhour,TASK_ID,FIELD12)A group by cdate,hr,tskid,userid)");
+
+select @query ;
+PREPARE s1 FROM @query;
+EXECUTE s1;
+DEALLOCATE PREPARE s1;
+
+TRUNCATE TABLE RPT_HOURLY_SMSC_DASHBOARD;
+insert into RPT_HOURLY_SMSC_DASHBOARD select * from RPT_HOURLY_SMSC_DASHBOARD_TEMP;
+END

@@ -1,0 +1,61 @@
+CREATE DEFINER=`cmsuser`@`localhost` PROCEDURE `ProcessCMSSubmit`(IN x varchar (20))
+BEGIN
+DECLARE tableName varchar (60);
+DECLARE tableName1 varchar (30);
+DECLARE tableName2 varchar (30);
+DECLARE cnt int;
+DECLARE path_info varchar (30);
+DECLARE file_location varchar (70);
+DECLARE p_procedueName varchar (50);
+DECLARE sub_tableName varchar(60);
+DECLARE subTableName varchar (60);
+DECLARE Channel_Id varchar (30);
+
+SELECT procedure_name INTO p_procedueName FROM CMS_REPORT_DETAILS WHERE serial_no = 2;
+select @p_procedueName;
+SELECT PARAMETER_VALUE INTO sub_tableName FROM CMSDB_CONFIG_PARAMETERS WHERE PARAMETER_NAME = 'SUBMIT';
+select @sub_tableName;
+select @tableName1;
+
+SET tableName = @tableName1;
+SET tableName1 = substring_index(tableName,';',1);
+SET tableName2 = substring_index(tableName,';',-1);
+
+select "Calling AuditInfo_Insert Procedure.";
+CALL AuditInfo_Insert(p_procedueName, sub_tableName,x, @tableName1);
+select "Execution Completed for AuditInfo_Insert Procedure.";
+SET tableName = @tableName1;
+SET tableName1 = substring_index(tableName,';',1);
+SET tableName2 = substring_index(tableName,';',-1);
+
+SET Channel_Id = GetChannel_Id();
+
+TRUNCATE TABLE SHADOW_CMS_SUBMIT;
+
+TRUNCATE TABLE TASK_PROFILE_RPT;
+INSERT INTO TASK_PROFILE_RPT (TASK_ID, OA, CREATED_BY) (SELECT TASK_ID,OA,CREATED_BY FROM TASK_PROFILE);
+select "DATA POPULATED ON TASK_PROFILE_RPT";
+
+SET @query = CONCAT("INSERT INTO SHADOW_CMS_SUBMIT(CDR_DATE,CIRCLE_ID,TASK_ID,INTERFACE_ID,NUM_SERIES,STATUS_CODE,CHANNEL_ID,TOTAL) (select date_format(CDR.CREATE_TIME,'%d-%m-%Y'), CDR.CIRCLE_ID,CDR.TASK_ID,CDR.INTERFACE_ID,CDR.FIELD20 Series,CDR.STATUS_CODE,", Channel_Id, ",count(*) from ", tableName1 ," CDR group by date_format(CDR.CREATE_TIME,'%d-%m-%Y') ,CDR.CIRCLE_ID,CDR.TASK_ID,CDR.INTERFACE_ID,Series,CDR.STATUS_CODE,",Channel_Id,")");
+select @query ;
+PREPARE s1 FROM @query;
+EXECUTE s1;
+DEALLOCATE PREPARE s1;
+
+SET @query1 = CONCAT("INSERT INTO SHADOW_CMS_SUBMIT(CDR_DATE,CIRCLE_ID,TASK_ID,INTERFACE_ID,NUM_SERIES,STATUS_CODE,CHANNEL_ID,TOTAL) (select date_format(CDR.CREATE_TIME,'%d-%m-%Y') ,CDR.CIRCLE_ID,CDR.TASK_ID,CDR.INTERFACE_ID,CDR.FIELD20 Series,CDR.STATUS_CODE,",Channel_Id,",count(*) from ", tableName2 ," CDR group by date_format(CDR.CREATE_TIME,'%d-%m-%Y') ,CDR.CIRCLE_ID,CDR.TASK_ID,CDR.INTERFACE_ID,Series,CDR.STATUS_CODE,",Channel_Id,")");
+select @query1;
+PREPARE s1 FROM @query1;
+EXECUTE s1;
+DEALLOCATE PREPARE s1;
+
+SET @rpt_query = concat("INSERT INTO RPT_CP_SUBMIT(CDR_DATE,CIRCLE_ID,CP_ACCOUNT_ID,CP_USER_ID,CP_OA,TASK_ID,INTERFACE_ID,NUM_SERIES,STATUS_CODE,CHANNEL_ID,TOTAL) (select SH.CDR_DATE,SH.CIRCLE_ID,UD.ROLE_ID,TP.CREATED_BY,TP.OA,SH.TASK_ID,SH.INTERFACE_ID,SH.NUM_SERIES,SH.STATUS_CODE,SH.CHANNEL_ID,sum(SH.TOTAL) from SHADOW_CMS_SUBMIT SH,TASK_PROFILE_RPT TP,USER_DETAILS UD where TP.TASK_ID=SH.TASK_ID and TP.CREATED_BY=UD.USER_ID group by SH.CDR_DATE,SH.CIRCLE_ID,UD.ROLE_ID,TP.CREATED_BY,TP.OA,SH.TASK_ID,SH.INTERFACE_ID,SH.NUM_SERIES,SH.STATUS_CODE,SH.CHANNEL_ID)");
+select @rpt_query;
+PREPARE s1 FROM @rpt_query;
+EXECUTE s1;
+DEALLOCATE PREPARE s1;
+
+select "Calling AuditInfo_Update Procedure.";
+CALL AuditInfo_Update(p_procedueName, x);
+select "Execution Completed for AuditInfo_Update Procedure.";
+COMMIT;
+END

@@ -1,0 +1,36 @@
+CREATE DEFINER=`root`@`127.0.0.1` PROCEDURE `Populate_RPT_IFFCOCAMPAIGN_FACT`()
+BEGIN
+declare dDay,monthNo,Actual_month varchar(10);
+  declare tableName1,tableName2 varchar(50);
+ declare dDate Date;
+ declare tsk1,IFFSTS varchar(100000);
+
+ set @tasknum=0;
+
+set session group_concat_max_len=100000;
+
+select date_add(curdate(),interval -1 day) into dDate;
+select date_format(dDate,'%d') into dDay ;
+select dDay;
+select date_format(dDate,'%m') into monthNo;
+
+SELECT STATUS INTO IFFSTS from CMS_REPORT_STATUS WHERE TYPE='IFFCO';
+
+
+
+SET @query = CONCAT("select group_concat(TASK_ID)  into @tsk1 from TASK_PROFILE_RPT where CREATED_BY in(",IFFSTS,") and ((STATUS=7  and  SCHEDULE_TIME like '",dDate," %') OR (ONLINE_VALUE > 0))");
+ select @query;
+  PREPARE s1 FROM @query;
+    EXECUTE s1;
+    DEALLOCATE PREPARE s1;
+
+select @tsk1;
+
+set @query=concat("INSERT INTO RPT_IFFCOCAMPAIGN_FACT(select A.cdrdate,A.taskname,sum(A.smscount),sum(A.uniquemobilenumber),sum(A.success),sum(A.dnd), sum(A.totalfail)-sum(A.dnd) others,sum(A.totalfail),now() FROM 
+(select date(cdr.CREATE_TIME) cdrdate,sh.DESCRIPTION taskname,cp.SMS_COUNT smscount,sum(cdr.DACOUNT) uniquemobilenumber,sum(case when cdr.FIELD18=0 and cdr.FIELD19=1 and cdr.STATUS_CODE=0 then DACOUNT else 0 end ) success,sum(case when STATUS_CODE=22 then DACOUNT else 0 end ) dnd,(SUM(CASE WHEN cdr.STATUS_CODE=0 AND cdr.FIELD19 = 0 THEN  DACOUNT ELSE 0 END) + SUM(CASE WHEN cdr.STATUS_CODE=0 AND cdr.FIELD19 = 1  AND cdr.FIELD18 <> 0 THEN  DACOUNT ELSE 0 END) + sum(case when STATUS_CODE=22 then DACOUNT else 0 end )) totalfail from  RPT_DETAILED_IFFCO cdr,SCHEDULE_MASTER sh,TASK_PROFILE_RPT cp where  cdr.TASK_ID in(",@tsk1,") and cdr.TASK_ID=cp.TASK_ID and cp.SCHEDULE_ID=sh.SCHEDULE_ID  GROUP BY cdrdate,taskname,smscount,uniquemobilenumber)A group by A.cdrdate,A.taskname");
+
+PREPARE s1 FROM @query;
+EXECUTE s1;
+DEALLOCATE PREPARE s1;
+
+END

@@ -1,0 +1,78 @@
+CREATE DEFINER=`cmsuser`@`localhost` PROCEDURE `PopulateWEEKCOUNT`()
+BEGIN
+
+declare cdy,yr varchar(10);
+DECLARE cdte int;
+
+select date_format(date_add(curdate(),interval -1 day),'%d') into cdy;
+select date_format(date_add(curdate(),interval -1 day),'%Y') into yr;
+select cdy;
+
+select date_format(last_day(date_add(curdate(),interval -1 day)),'%d')- cdy into cdte;
+select cdte;
+
+drop table TMP_PROJECTION_COUNT;
+CREATE TABLE TMP_PROJECTION_COUNT (CDR_DATE date,TYPE varchar(600),WEEKCOUNT decimal(18,2),DELCOUNT decimal(18,2),REMAINDAYS int(11));
+
+drop table if exists RPT_PROJECTION_MON_COUNT;create table RPT_PROJECTION_MON_COUNT(CDR_DATE date,USER_ID int,SUBMIT_COUNT bigint,DELIVERY_COUNT bigint,CREATE_DATE timestamp default current_timestamp on update CURRENT_TIMESTAMP);
+
+insert into RPT_PROJECTION_MON_COUNT(CDR_DATE,USER_ID,SUBMIT_COUNT) 
+select CDR_DATE,USER_ID,sum(SUBMIT_COUNT) from RPT_SUBMIT_DELIVERY_FACT_IB where STATUS_CODE=0 and CDR_DATE between date_format(date_add(curdate(),interval -1 day),'%Y-%m-01') and date_add(curdate(),interval -1 day)  group by CDR_DATE,USER_ID;
+
+insert into RPT_PROJECTION_MON_COUNT(CDR_DATE,USER_ID,DELIVERY_COUNT)
+select CDR_DATE,USER_ID,sum(DELIVERY_COUNT) from RPT_SUBMIT_DELIVERY_FACT_IB where STATUS_CODE=0 and DEL_STATUS=0 and CDR_DATE between date_format(date_add(curdate(),interval -1 day),'%Y-%m-01') and date_add(curdate(),interval -1 day)  group by CDR_DATE,USER_ID;
+
+if(cdy = '01') then
+
+insert into TMP_PROJECTION_COUNT(CDR_DATE,TYPE,WEEKCOUNT,REMAINDAYS) 
+select A.CDATE,A.org,A.wekcnt,A.remdays from 
+(select RPT.CDR_DATE CDATE,CMS.ORG org,sum(case when RPT.CDR_DATE=date_add(curdate(),interval -1 day) then SUBMIT_COUNT END) wekcnt,date_format(last_day(date_add(curdate(),interval -1 day)),'%d')-'01'  remdays
+ FROM RPT_PROJECTION_MON_COUNT RPT,CMS_REPORT_STATUS CMS where RPT.USER_ID=CMS.STATUS
+ and RPT.CDR_DATE=date_add(curdate(),interval -1 day)
+ GROUP BY CMS.ORG)A;
+ 
+ insert into TMP_PROJECTION_COUNT(CDR_DATE,TYPE,DELCOUNT,REMAINDAYS) 
+select A.CDATE,A.org,A.wekcnt,A.remdays from 
+(select RPT.CDR_DATE CDATE,CMS.ORG org,sum(case when RPT.CDR_DATE=date_add(curdate(),interval -1 day) then DELIVERY_COUNT END) wekcnt,date_format(last_day(date_add(curdate(),interval -1 day)),'%d')-'01'  remdays
+ FROM RPT_PROJECTION_MON_COUNT RPT,CMS_REPORT_STATUS CMS where RPT.USER_ID=CMS.STATUS
+ and RPT.CDR_DATE=date_add(curdate(),interval -1 day)
+ GROUP BY CMS.ORG)A;
+ 
+ end if;
+ 
+ if(cdy >= '02' and cdy <= '08') then
+  
+ insert into TMP_PROJECTION_COUNT(CDR_DATE,TYPE,WEEKCOUNT,REMAINDAYS)
+ select A.CDATE,A.org,A.wekcnt/cdy,A.remdays from 
+ (select RPT.CDR_DATE CDATE,CMS.ORG org,sum(case when RPT.CDR_DATE between date_format(curdate(),'%Y-%m-01') and date_add(curdate(),interval -1 day) then SUBMIT_COUNT END) wekcnt, date_format(last_day(date_add(curdate(),interval -1 day)),'%d')-cdy remdays
+ FROM RPT_PROJECTION_MON_COUNT RPT,CMS_REPORT_STATUS CMS where RPT.USER_ID=CMS.STATUS
+ and  RPT.CDR_DATE between date_format(curdate(),'%Y-%m-01') and date_add(curdate(),interval -1 day)
+ GROUP BY CMS.ORG)A;
+ 
+ insert into TMP_PROJECTION_COUNT(CDR_DATE,TYPE,DELCOUNT,REMAINDAYS)
+ select A.CDATE,A.org,A.wekcnt/cdy,A.remdays from 
+ (select RPT.CDR_DATE CDATE,CMS.ORG org,sum(case when RPT.CDR_DATE between date_format(curdate(),'%Y-%m-01') and date_add(curdate(),interval -1 day) then DELIVERY_COUNT END) wekcnt, date_format(last_day(date_add(curdate(),interval -1 day)),'%d')-cdy remdays
+ FROM RPT_PROJECTION_MON_COUNT RPT,CMS_REPORT_STATUS CMS where RPT.USER_ID=CMS.STATUS
+ and  RPT.CDR_DATE between date_format(curdate(),'%Y-%m-01') and date_add(curdate(),interval -1 day)
+ GROUP BY CMS.ORG)A;
+  
+ else
+ 
+ insert into TMP_PROJECTION_COUNT(CDR_DATE,TYPE,WEEKCOUNT,REMAINDAYS)
+ select A.CDATE,A.org,A.wekcnt/7,A.remdays from  
+ (select RPT.CDR_DATE CDATE,CMS.ORG org,sum(case when RPT.CDR_DATE between date_add(curdate(),interval -7 day) and date_add(curdate(),interval -1 day) then SUBMIT_COUNT END) wekcnt, date_format(last_day(date_add(curdate(),interval -1 day)),'%d')-date_format(date_add(curdate(),interval -1 day),'%d') remdays
+ FROM RPT_PROJECTION_MON_COUNT RPT,CMS_REPORT_STATUS CMS where RPT.USER_ID=CMS.STATUS
+ and RPT.CDR_DATE between date_add(curdate(),interval -7 day) and date_add(curdate(),interval -1 day)
+ GROUP BY CMS.ORG)A;
+ 
+ insert into TMP_PROJECTION_COUNT(CDR_DATE,TYPE,DELCOUNT,REMAINDAYS)
+ select A.CDATE,A.org,A.wekcnt/7,A.remdays from  
+ (select RPT.CDR_DATE CDATE,CMS.ORG org,sum(case when RPT.CDR_DATE between date_add(curdate(),interval -7 day) and date_add(curdate(),interval -1 day) then DELIVERY_COUNT END) wekcnt, date_format(last_day(date_add(curdate(),interval -1 day)),'%d')-date_format(date_add(curdate(),interval -1 day),'%d') remdays
+ FROM RPT_PROJECTION_MON_COUNT RPT,CMS_REPORT_STATUS CMS where RPT.USER_ID=CMS.STATUS
+ and RPT.CDR_DATE between date_add(curdate(),interval -7 day) and date_add(curdate(),interval -1 day)
+ GROUP BY CMS.ORG)A;
+
+ end if;
+
+ 
+ END
